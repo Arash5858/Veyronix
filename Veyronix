@@ -1,0 +1,176 @@
+veyronix/
+├── monitor.py
+├── requirements.txt
+├── .gitignore
+└── README.md
+
+import json
+import time
+from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
+
+ENDPOINTS = [
+    "https://httpbin.org/status/200",
+    "https://httpbin.org/delay/1",
+    "https://httpbin.org/status/503",
+]
+
+TIMEOUT = 5
+MAX_WORKERS = 5
+REPORT_FILE = "health_report.json"
+
+
+def check_endpoint(url):
+    started = time.perf_counter()
+
+    request = Request(
+        url,
+        headers={"User-Agent": "Veyronix/1.0"},
+        method="GET",
+    )
+
+    try:
+        with urlopen(request, timeout=TIMEOUT) as response:
+            status = response.status
+            error = None
+
+    except HTTPError as exc:
+        status = exc.code
+        error = f"HTTP error: {exc.code}"
+
+    except (URLError, TimeoutError, OSError) as exc:
+        status = None
+        error = str(exc.reason if isinstance(exc, URLError) else exc)
+
+    elapsed_ms = round(
+        (time.perf_counter() - started) * 1000, 2
+    )
+
+    return {
+        "url": url,
+        "status_code": status,
+        "response_time_ms": elapsed_ms,
+        "healthy": status is not None and 200 <= status < 400,
+        "error": error,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def main():
+    results = []
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {
+            executor.submit(check_endpoint, url): url
+            for url in ENDPOINTS
+        }
+
+        for future in as_completed(futures):
+            result = future.result()
+            results.append(result)
+
+            state = "UP" if result["healthy"] else "DOWN"
+            code = result["status_code"] or "N/A"
+
+            print(
+                f"[{state}] {result['url']} | "
+                f"HTTP {code} | "
+                f"{result['response_time_ms']} ms"
+            )
+
+    report = {
+        "service": "Veyronix",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "total_endpoints": len(results),
+        "healthy": sum(r["healthy"] for r in results),
+        "unhealthy": sum(not r["healthy"] for r in results),
+        "results": results,
+    }
+
+    with open(REPORT_FILE, "w", encoding="utf-8") as file:
+        json.dump(report, file, indent=2, ensure_ascii=False)
+
+    print(f"\nReport saved to {REPORT_FILE}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+# Veyronix
+# No external dependencies required.
+# Python 3.10+
+
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+health_report.json
+.idea/
+.vscode/
+
+
+# Veyronix
+
+**A lightweight API health monitoring tool built with Python.**
+
+Veyronix checks HTTP endpoints, measures response times, detects unsuccessful responses, and generates structured JSON reports.
+
+## Features
+
+- Concurrent endpoint monitoring
+- HTTP status validation
+- Response time measurement
+- Configurable request timeout
+- JSON health reports
+- Zero third-party dependencies
+
+## Requirements
+
+- Python 3.10 or later
+
+## Getting Started
+
+Clone the repository:
+
+```bash
+git clone https://github.com/YOUR_USERNAME/veyronix.git
+cd veyronix
+```
+
+Run the monitor:
+
+```bash
+python monitor.py
+```
+
+## Configuration
+
+Edit the `ENDPOINTS`, `TIMEOUT`, and `MAX_WORKERS` variables in `monitor.py` to configure your monitoring setup.
+
+Only monitor endpoints you own or are authorized to test.
+
+## Output
+
+Veyronix generates a `health_report.json` file containing endpoint status, response time, error details, and UTC timestamps.
+
+## Roadmap
+
+- [ ] Configurable endpoint lists
+- [ ] Historical response-time tracking
+- [ ] Retry policies
+- [ ] Alert integrations
+- [ ] Docker support
+
+## License
+
+MIT
+
+python monitor.py
+git init
+git add .
+git commit -m "Initial release of Veyronix"
